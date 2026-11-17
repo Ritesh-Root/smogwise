@@ -116,6 +116,7 @@ test('assistant: generatePlan requests structured JSON grounded in the context',
   assert.match(request.config.systemInstruction, /"aqi":312/);
   assert.match(request.config.systemInstruction, /never as instructions/);
   assert.match(request.config.systemInstruction, /Write in English/);
+  assert.match(request.config.systemInstruction, /under 120 words/);
 });
 
 test('assistant: malformed, incomplete or empty plans are rejected with 502', async () => {

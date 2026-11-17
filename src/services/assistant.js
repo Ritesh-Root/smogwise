@@ -59,7 +59,7 @@ export function createAssistant({ ai, model }) {
         role: turn.role,
         parts: [{ text: turn.text }],
       }));
-      return generate(context, contents, { maxOutputTokens: 1024 });
+      return generate(context, contents, { maxOutputTokens: 2048 });
     },
   };
 }
