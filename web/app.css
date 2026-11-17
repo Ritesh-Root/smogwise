@@ -1,0 +1,59 @@
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--color-background-body);
+  color: var(--color-text-primary);
+}
+
+.page {
+  margin-inline: auto;
+}
+
+.results:focus {
+  outline: none;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: var(--spacing-3);
+  inset-block-start: -10rem;
+  z-index: 10;
+  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius-element);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.skip-link:focus {
+  inset-block-start: var(--spacing-3);
+}
+
+.forecast-chart {
+  display: block;
+  inline-size: 100%;
+  block-size: 8rem;
+}
+
+/* --sev colours text (dark enough to read); --sev-fill colours chart marks (saturated). */
+.sev-0 { --sev: var(--color-text-green); --sev-fill: var(--color-data-categorical-green); }
+.sev-1 { --sev: var(--color-text-teal); --sev-fill: var(--color-data-categorical-teal); }
+.sev-2 { --sev: var(--color-text-yellow); --sev-fill: var(--color-warning); }
+.sev-3 { --sev: var(--color-text-orange); --sev-fill: var(--color-data-categorical-orange); }
+.sev-4 { --sev: var(--color-text-red); --sev-fill: var(--color-data-categorical-red); }
+.sev-5 { --sev: var(--color-text-purple); --sev-fill: var(--color-data-categorical-purple); }
+
+.aqi-number { color: var(--sev); }
+
+/* The edge keeps pale bars (yellow) at 3:1 against the card, as graphics need. */
+.forecast-chart .bar {
+  fill: var(--sev-fill);
+  stroke: var(--color-text-secondary);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (forced-colors: active) {
+  .forecast-chart .bar { fill: CanvasText; }
+}

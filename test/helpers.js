@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { createApp } from '../src/app.js';
 
 export const CPCB = (aqi, category = 'Poor') => ({ code: 'ind_cpcb', name: 'AQI (India)', aqi, category, higherIsWorse: true });
@@ -36,6 +39,12 @@ export const PROFILE = {
 
 export const PLAN_REQUEST = { lat: 28.61, lng: 77.21, label: 'New Delhi, India', utcOffsetMinutes: 330, profile: PROFILE };
 
+/** A tiny stand-in for the Vite build output, so static serving can be tested without building. */
+export const PUBLIC_DIR = mkdtempSync(path.join(tmpdir(), 'smogwise-public-'));
+mkdirSync(path.join(PUBLIC_DIR, 'assets'));
+writeFileSync(path.join(PUBLIC_DIR, 'index.html'), '<!doctype html><html lang="en"><title>SmogWise</title><div id="root"></div>');
+writeFileSync(path.join(PUBLIC_DIR, 'assets', 'app-abc123.js'), 'export {};');
+
 /** App wired to fakes; pass overrides to replace a service or record calls. */
 export function testApp(overrides = {}) {
   const calls = { plan: [], answer: [], logs: [] };
@@ -49,6 +58,7 @@ export function testApp(overrides = {}) {
       generatePlan: async (context) => { calls.plan.push(context); return PLAN; },
       answer: async (context, question, history) => { calls.answer.push({ context, question, history }); return 'Wait until 3 pm.'; },
     },
+    publicDir: PUBLIC_DIR,
     log: (entry) => calls.logs.push(entry),
     ...overrides,
   });

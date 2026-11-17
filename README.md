@@ -19,15 +19,15 @@ A GenAI assistant that helps families and communities get through severe winter 
 | Sustainable alternatives | Swaps for current habits, such as a cleaner commute or heating source. |
 | Direct impact of choices | A deterministic engine computes weekly and yearly CO2 and PM2.5 for the commute, what each cleaner mode saves, and how much cleaner the best outdoor hour is. Gemini must quote these numbers, and the UI shows them in a table. |
 | Assistant | A follow-up chat that answers questions using the same live data and household profile. |
-| Families and communities | Plain-language output, English or Hindi, usable by keyboard and screen reader. |
+| Families and communities | Plain-language output, English or Hindi, a copy-to-share button for group chats, usable by keyboard and screen reader. |
 
 ## How it works
 
 ```
-Browser (vanilla HTML/CSS/JS)
+Browser: React 19 + Astryx design system (built with Vite)
    |  GET /api/location   POST /api/plan   POST /api/chat
    v
-Express on Cloud Run
+Express on Cloud Run (serves the built client and the API)
    |-- Geocoding API ............ place name <-> coordinates
    |-- Air Quality API .......... current conditions + hourly forecast
    |-- impact engine ............ commute emissions, best/worst hours, severity (pure functions)
@@ -55,40 +55,43 @@ The model never produces the numbers. It explains numbers the server computed, s
 
 ## Security
 
-- Strict Content Security Policy (`'self'` only, no inline scripts or styles), HSTS, `nosniff`, `frame-ancestors 'none'` and a Permissions-Policy, via Helmet.
+- Strict Content Security Policy, HSTS, `nosniff`, `frame-ancestors 'none'` and a Permissions-Policy, via Helmet. Scripts and styles are `'self'` only, with one exception: the design system injects a single `<style>` element for popover animations, and that exact content is allowed by SHA-256 hash rather than `'unsafe-inline'`. Verified in a real browser: no CSP violations.
 - Every request is validated with zod: strict objects, enums, numeric ranges and length limits. Bodies are capped at 10 kB.
 - Rate limit of 30 API requests per minute per client.
 - No secrets in the repository. The Maps key is restricted to the two APIs it needs and lives in Secret Manager.
 - Prompt-injection defence: user text only appears inside a JSON context block that the model is told to treat as data, the model is limited to air quality topics, and its plan output must match a schema.
-- Model output is rendered with `textContent`, never `innerHTML`.
+- Model output is rendered as React text or sanitised Markdown, never as raw HTML.
 - Upstream error details are logged, not returned to the client.
-- The container runs as a non-root user with production dependencies only.
+- The container runs as a non-root user with production dependencies only; the client toolchain stays in the build stage.
 
 ## Efficiency
 
 - Air quality responses are cached per ~1 km grid cell for 10 minutes and geocoding for 24 hours. Concurrent identical lookups share one upstream request.
 - Current conditions and forecast are fetched in parallel.
 - The model context is trimmed to the fields it needs, and thinking is set to low, which roughly halved response time.
-- No frontend framework or build step: the page is about 21 kB before compression, served gzipped with cache headers.
+- Hashed client assets are served gzipped with a one-year immutable cache; the HTML always revalidates.
+- The results and the chat (with its Markdown renderer) are code-split, so the first screen only loads the form. Measured in Chromium, first load is about 290 kB over the wire, most of it React and the design system. That is the cost of a full component library compared with a hand-written page; the chat chunk loads only after a plan exists.
 
 ## Accessibility
 
-- Semantic landmarks, one `h1`, ordered headings, a skip link, and a label on every control.
-- Status messages use `role="status"`, the chat uses `role="log"`, and focus moves to the results when the plan is ready.
-- Air quality severity is always given in words as well as colour.
-- Colours meet WCAG AA contrast in light and dark themes, touch targets are at least 44 px, and the layout reflows down to 320 px.
-- Works with keyboard only. Respects `prefers-reduced-motion` and `prefers-color-scheme`.
-- Plans can be generated in Hindi.
+- Built on Astryx components, which ship keyboard support and ARIA wiring, plus the patterns from Chrome's Modern Web Guidance: errors shown on blur or submit and cleared on input, `aria-invalid` kept in sync, focus moved to the first invalid field on a failed submit, 2-5 exclusive choices as radio buttons, and a labelled loading state.
+- Semantic landmarks, one `h1`, ordered headings, a skip link, and a label on every control. The plan region takes focus when it appears, so screen reader and keyboard users land on it.
+- Status messages go through a polite live region.
+- Severity is always given in words and by position as well as colour. The forecast chart is one image with a text summary, and the same data is available as a table.
+- Light and dark themes follow the system setting. Checked with axe-core in real Chromium on a desktop viewport in light mode and a 375 px phone viewport in dark mode, including colour contrast: no violations.
+- Chart colours use the design system's data tokens with an edge stroke so pale bars keep 3:1 contrast; forced-colors mode is handled.
+- Touch targets, reflow to 320 px, `prefers-reduced-motion` and Hindi plans (marked with `lang="hi"`) are supported.
 
 ## Testing
 
 ```bash
 npm install
-npm run lint
-npm test
+npm run check     # lint, API tests, UI tests, production build
 ```
 
-37 tests run on Node's built-in test runner with no network access. They cover the impact maths, cache, input validation, the three Google service clients (with fake `fetch` and a fake model), every API route, security headers, rate limiting, error masking and baseline page accessibility. Coverage is enforced at 90% of lines and currently stands at 100%. GitHub Actions runs lint, tests and `npm audit` on every push.
+- `npm test`: 36 API tests on Node's built-in runner with no network access. They cover the impact maths, cache, input validation, the Google service clients (fake `fetch`, fake model), every route, security headers, static caching, rate limiting and error masking. Coverage is enforced at 90% of lines and stands at 100%.
+- `npm run test:web`: 25 UI tests on Vitest, Testing Library and jsdom. They cover form validation and focus, the full plan flow, API and network failures, copy-to-share, chat, the forecast chart, and an axe-core accessibility scan of the form and the results.
+- GitHub Actions runs lint, both suites, the build and `npm audit` on every push.
 
 ## Run locally
 
@@ -98,8 +101,10 @@ Requires Node 22 or newer, a Google Cloud project with Vertex AI enabled, and an
 gcloud auth application-default login
 export GOOGLE_CLOUD_PROJECT=your-project
 export MAPS_API_KEY=your-key
-npm start        # http://localhost:8080
+npm run build && npm start    # http://localhost:8080
 ```
+
+For UI work, run `npm start` in one terminal and `npm run dev:web` in another; Vite proxies `/api` to the server.
 
 Optional settings: `GEMINI_MODEL` (default `gemini-3-flash-preview`), `VERTEX_LOCATION` (default `global`), `PORT`.
 
@@ -123,9 +128,15 @@ src/validation.js      zod schemas for requests and for the model's plan
 src/prompt.js          system instruction, model context, response schema
 src/engine/impact.js   deterministic impact maths
 src/services/          Air Quality, Geocoding, Gemini clients and the TTL cache
-public/                accessible single-page frontend
-test/                  unit and route tests
+web/                   React client (Vite): App, components/, api, formatting, theme
+test/                  API tests (node:test)
+web/test/              UI tests (Vitest)
 ```
+
+## Credits
+
+- UI built with [Astryx](https://github.com/meta/astryx), Meta's design system.
+- Frontend practices guided by Chrome's [Modern Web Guidance](https://github.com/GoogleChrome/modern-web-guidance).
 
 ## Assumptions and limits
 

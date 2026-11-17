@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import request from 'supertest';
 import { HttpError } from '../src/errors.js';
@@ -17,6 +16,7 @@ test('serves the page with strict security headers', async () => {
   assert.match(csp, /script-src 'self'(;|$)/);
   assert.match(csp, /frame-ancestors 'none'/);
   assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
+  assert.match(csp, /style-src-elem 'self' 'sha256-[A-Za-z0-9+/=]+'/);
   assert.equal(response.headers['x-content-type-options'], 'nosniff');
   assert.ok(response.headers['strict-transport-security']);
   assert.match(response.headers['permissions-policy'], /geolocation=\(self\)/);
@@ -121,21 +121,11 @@ test('API requests are rate limited per client', async () => {
   await request(app).get('/health').expect(200);
 });
 
-test('page markup meets baseline accessibility requirements', async () => {
-  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
-  assert.match(html, /<html lang="en">/);
-  assert.match(html, /<meta name="viewport"/);
-  assert.match(html, /class="skip-link" href="#main"/);
-  assert.equal(html.match(/<main\b/g).length, 1);
-  assert.equal(html.match(/<h1\b/g).length, 1);
-  assert.match(html, /role="status" aria-live="polite"/);
-  assert.match(html, /role="log"/);
-  assert.doesNotMatch(html, /\sstyle=|\son[a-z]+=|<script>/, 'no inline styles, handlers or scripts (CSP)');
-  // Every form control has a label: either a matching for= or a wrapping <label>.
-  for (const [, id] of html.matchAll(/<(?:input|select|textarea)\b[^>]*\bid="([^"]+)"/g)) {
-    const labelled = html.includes(`for="${id}"`) || new RegExp(`<label[^>]*>\\s*<input[^>]*id="${id}"`).test(html);
-    assert.ok(labelled, `control #${id} has a label`);
-  }
-  // Every fieldset names its group.
-  assert.equal(html.match(/<fieldset>/g).length, html.match(/<legend>/g).length);
+test('static assets are cached for a year, the page is always revalidated', async () => {
+  const { app } = testApp();
+  const asset = await request(app).get('/assets/app-abc123.js').expect(200);
+  assert.match(asset.headers['cache-control'], /max-age=31536000.*immutable|immutable.*max-age=31536000/);
+  const page = await request(app).get('/').expect(200);
+  assert.match(page.headers['cache-control'], /max-age=0/);
+  await request(app).get('/assets/missing.js').expect(404);
 });

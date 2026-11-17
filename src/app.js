@@ -7,7 +7,8 @@ import { commuteImpact, outdoorWindows, severity, SEVERITY_LABELS } from './engi
 import { HttpError } from './errors.js';
 import { chatRequestSchema, locationQuerySchema, planRequestSchema } from './validation.js';
 
-const PUBLIC_DIR = path.join(import.meta.dirname, '..', 'public');
+const ASTRYX_LAYER_STYLE_HASH = "'sha256-/i2+VVt2qoVh0Ag9OWwyc9593DCZeYGAv6SliqVbheY='";
+const DEFAULT_PUBLIC_DIR = path.join(import.meta.dirname, '..', 'dist', 'client');
 
 /** Parse input with a zod schema, turning failures into a 400 the client can display. */
 function parse(schema, input) {
@@ -26,10 +27,11 @@ function parse(schema, input) {
  *   geocoder: {search: (q: string) => Promise<any>, reverse: (lat: number, lng: number) => Promise<any>},
  *   assistant: {generatePlan: (context: object) => Promise<any>, answer: (context: object, question: string, history: any[]) => Promise<string>},
  *   rateLimitPerMinute?: number,
+ *   publicDir?: string,
  *   log?: (entry: object) => void,
  * }} deps
  */
-export function createApp({ airQuality, geocoder, assistant, rateLimitPerMinute = 30, log = (entry) => console.error(JSON.stringify(entry)) }) {
+export function createApp({ airQuality, geocoder, assistant, rateLimitPerMinute = 30, publicDir = DEFAULT_PUBLIC_DIR, log = (entry) => console.error(JSON.stringify(entry)) }) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // Cloud Run puts exactly one proxy in front of the container.
@@ -42,6 +44,10 @@ export function createApp({ airQuality, geocoder, assistant, rateLimitPerMinute 
           defaultSrc: ["'self'"],
           scriptSrc: ["'self'"],
           styleSrc: ["'self'"],
+          // Astryx injects one <style> with popover slide animations. Allow exactly that content by
+          // hash instead of 'unsafe-inline'. If an Astryx upgrade changes it, only the animation is lost;
+          // re-read the hash from the console violation message.
+          styleSrcElem: ["'self'", ASTRYX_LAYER_STYLE_HASH],
           imgSrc: ["'self'", 'data:'],
           connectSrc: ["'self'"],
           objectSrc: ["'none'"],
@@ -58,7 +64,9 @@ export function createApp({ airQuality, geocoder, assistant, rateLimitPerMinute 
   });
   app.use(compression());
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
-  app.use(express.static(PUBLIC_DIR, { maxAge: '1h' }));
+  // Vite fingerprints everything under /assets, so it can be cached for a year; the HTML must always revalidate.
+  app.use('/assets', express.static(path.join(publicDir, 'assets'), { immutable: true, maxAge: '1y', fallthrough: false }));
+  app.use(express.static(publicDir, { maxAge: 0, etag: true }));
 
   const api = express.Router();
   api.use(rateLimit({ windowMs: 60_000, limit: rateLimitPerMinute, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many requests. Please wait a minute and try again.' } }));
@@ -74,7 +82,12 @@ export function createApp({ airQuality, geocoder, assistant, rateLimitPerMinute 
     const level = severity(air.index);
     return {
       location: { label, lat, lng, utcOffsetMinutes },
-      air: { ...air, severity: level, severityLabel: SEVERITY_LABELS[level] },
+      air: {
+        ...air,
+        severity: level,
+        severityLabel: SEVERITY_LABELS[level],
+        forecast: air.forecast.map((hour) => ({ ...hour, severity: severity(hour.index) })),
+      },
       impact: {
         commute: commuteImpact(profile),
         outdoor: outdoorWindows(air.forecast, utcOffsetMinutes),
@@ -105,9 +118,11 @@ export function createApp({ airQuality, geocoder, assistant, rateLimitPerMinute 
 
   // Central error handler: client-safe messages only; details go to the log.
   app.use((error, req, res, _next) => {
-    const status = error instanceof HttpError ? error.status : (error.status === 400 || error.status === 413) ? error.status : 502;
+    const passThrough = [400, 404, 413].includes(error.status) ? error.status : undefined;
+    const status = error instanceof HttpError ? error.status : (passThrough ?? 502);
     if (status >= 500) log({ severity: 'ERROR', message: error.message, path: req.path });
-    const message = error instanceof HttpError ? error.message : status === 502 ? 'A data service is temporarily unavailable. Please try again shortly.' : 'Invalid request.';
+    const generic = { 404: 'Not found', 502: 'A data service is temporarily unavailable. Please try again shortly.' };
+    const message = error instanceof HttpError ? error.message : (generic[status] ?? 'Invalid request.');
     res.status(status).json({ error: message });
   });
 
