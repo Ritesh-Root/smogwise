@@ -55,7 +55,7 @@ function renderAir(location, air) {
     el('div', { className: `aqi sev-${air.severity}` }, [
       el('span', { className: 'aqi-value', text: String(air.index.aqi) }),
       el('div', {}, [
-        el('p', { className: 'aqi-label', text: `${air.severityLabel}: ${air.index.category}` }),
+        el('p', { className: 'aqi-label', text: `${air.severityLabel} air quality` }),
         el('p', { className: 'hint', text: `${air.index.name}${dominant ? `. Main pollutant: ${dominant.name}` : ''}` }),
       ]),
     ]),
