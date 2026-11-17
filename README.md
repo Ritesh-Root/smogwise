@@ -69,7 +69,7 @@ The model never produces the numbers. It explains numbers the server computed, s
 - Air quality responses are cached per ~1 km grid cell for 10 minutes and geocoding for 24 hours. Concurrent identical lookups share one upstream request.
 - Current conditions and forecast are fetched in parallel.
 - The model context is trimmed to the fields it needs, and thinking is set to low, which roughly halved response time.
-- No frontend framework or build step: the page is about 25 kB before compression, served gzipped with cache headers.
+- No frontend framework or build step: the page is about 21 kB before compression, served gzipped with cache headers.
 
 ## Accessibility
 
