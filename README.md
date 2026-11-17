@@ -102,7 +102,7 @@ Errors are always `{ "error": "message" }` with a message that is safe to show. 
 ## Efficiency
 
 - Air quality is cached per ~1 km grid cell and language for 10 minutes, geocoding for 24 hours, and concurrent identical lookups share one upstream request. Current conditions and forecast are fetched in parallel.
-- The model context is trimmed to the fields it needs and thinking is set to low. Measured end to end on `gemini-3.8-flash` (six real requests, English and Hindi): a plan takes about 9 s (median 8.6 s; slower calls reached about 17 s) and a chat answer about 3 s.
+- The model context is trimmed to the fields it needs and thinking is set to low. Measured end to end on `gemini-3.8-flash` (six real requests, English and Hindi): a plan takes about 9 s (median 9.3 s; the slowest call took 24 s) and a chat answer about 3 s. A model attempt that times out after 25 s is retried once.
 - Hashed client assets are served with a one-year immutable cache; the HTML always revalidates. Responses are compressed on the fly (Brotli or gzip).
 - The results and the chat (with its Markdown renderer) are code-split, so the first screen only loads the form. First load is about 290 kB over the wire, most of it React and the design system. That is the cost of a full component library compared with a hand-written page.
 
