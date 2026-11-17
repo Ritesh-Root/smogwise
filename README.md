@@ -44,7 +44,7 @@ The model never produces the numbers. It explains numbers the server computed, s
 
 | Service | Use |
 | --- | --- |
-| Gemini on Vertex AI (`@google/genai`) | Plan generation with structured output, safety settings and follow-up chat |
+| Gemini 3.8 Flash on Vertex AI (`@google/genai`) | Plan generation with structured output, safety settings and follow-up chat |
 | Air Quality API | Live local AQI, pollutant concentrations, health advice, 24-hour forecast |
 | Geocoding API | Place search and reverse geocoding |
 | Cloud Run | Hosting, scale to zero |
@@ -68,7 +68,7 @@ The model never produces the numbers. It explains numbers the server computed, s
 
 - Air quality responses are cached per ~1 km grid cell for 10 minutes and geocoding for 24 hours. Concurrent identical lookups share one upstream request.
 - Current conditions and forecast are fetched in parallel.
-- The model context is trimmed to the fields it needs, and thinking is set to low, which roughly halved response time.
+- The model context is trimmed to the fields it needs and thinking is set to low. Measured end to end on `gemini-3.8-flash` (six real requests, English and Hindi): a plan takes about 9 s (median 8.6 s; slower calls reached about 17 s) and a chat answer about 3 s.
 - Hashed client assets are served gzipped with a one-year immutable cache; the HTML always revalidates.
 - The results and the chat (with its Markdown renderer) are code-split, so the first screen only loads the form. Measured in Chromium, first load is about 290 kB over the wire, most of it React and the design system. That is the cost of a full component library compared with a hand-written page; the chat chunk loads only after a plan exists.
 
@@ -106,7 +106,7 @@ npm run build && npm start    # http://localhost:8080
 
 For UI work, run `npm start` in one terminal and `npm run dev:web` in another; Vite proxies `/api` to the server.
 
-Optional settings: `GEMINI_MODEL` (default `gemini-3-flash-preview`), `VERTEX_LOCATION` (default `global`), `PORT`.
+Optional settings: `GEMINI_MODEL` (default `gemini-3.8-flash`), `VERTEX_LOCATION` (default `global`), `PORT`.
 
 ## Deploy
 

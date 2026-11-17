@@ -85,7 +85,7 @@ export function App() {
         }
         setPlace(target);
       }
-      setStatus('Checking the air and building your plan. This takes a few seconds...');
+      setStatus('Checking the air and building your plan. This usually takes about ten seconds...');
       const request = {
         lat: target.lat,
         lng: target.lng,
