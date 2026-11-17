@@ -1,130 +1,66 @@
+// @ts-check
 import path from 'node:path';
 import compression from 'compression';
 import express from 'express';
-import { rateLimit } from 'express-rate-limit';
-import helmet from 'helmet';
-import { commuteImpact, outdoorWindows, severity, SEVERITY_LABELS } from './engine/impact.js';
-import { HttpError } from './errors.js';
-import { chatRequestSchema, locationQuerySchema, planRequestSchema } from './validation.js';
+import { MODEL_CALLS_PER_HOUR, RATE_LIMITS } from './constants.js';
+import { log as defaultLog } from './logger.js';
+import { createErrorHandler } from './middleware/errors.js';
+import { createRateLimiters } from './middleware/rateLimits.js';
+import { securityHeaders } from './middleware/security.js';
+import { createApiRouter } from './routes/api.js';
 
-const ASTRYX_LAYER_STYLE_HASH = "'sha256-/i2+VVt2qoVh0Ag9OWwyc9593DCZeYGAv6SliqVbheY='";
 const DEFAULT_PUBLIC_DIR = path.join(import.meta.dirname, '..', 'dist', 'client');
-
-/** Parse input with a zod schema, turning failures into a 400 the client can display. */
-function parse(schema, input) {
-  const result = schema.safeParse(input);
-  if (!result.success) {
-    const issue = result.error.issues[0];
-    throw new HttpError(400, `Invalid input: ${issue.path.join('.') || 'request'} - ${issue.message}`);
-  }
-  return result.data;
-}
 
 /**
  * Build the Express app. Services are injected so tests can run without network access.
  * @param {{
- *   airQuality: {getSnapshot: (lat: number, lng: number) => Promise<any>},
- *   geocoder: {search: (q: string) => Promise<any>, reverse: (lat: number, lng: number) => Promise<any>},
- *   assistant: {generatePlan: (context: object) => Promise<any>, answer: (context: object, question: string, history: any[]) => Promise<string>},
+ *   airQuality: import('./types.js').AirQualityService,
+ *   geocoder: import('./types.js').Geocoder,
+ *   assistant: import('./types.js').Assistant,
  *   rateLimitPerMinute?: number,
+ *   modelRateLimitPerMinute?: number,
+ *   modelCallsPerHour?: number,
  *   publicDir?: string,
- *   log?: (entry: object) => void,
+ *   log?: (entry: import('./logger.js').LogEntry) => void,
+ *   now?: () => number,
  * }} deps
  */
-export function createApp({ airQuality, geocoder, assistant, rateLimitPerMinute = 30, publicDir = DEFAULT_PUBLIC_DIR, log = (entry) => console.error(JSON.stringify(entry)) }) {
+export function createApp({
+  airQuality,
+  geocoder,
+  assistant,
+  rateLimitPerMinute = RATE_LIMITS.perMinute,
+  modelRateLimitPerMinute = RATE_LIMITS.modelPerMinute,
+  modelCallsPerHour = MODEL_CALLS_PER_HOUR,
+  publicDir = DEFAULT_PUBLIC_DIR,
+  log = defaultLog,
+  now = Date.now,
+}) {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // Cloud Run puts exactly one proxy in front of the container.
 
-  app.use(
-    helmet({
-      contentSecurityPolicy: {
-        useDefaults: false,
-        directives: {
-          defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
-          styleSrc: ["'self'"],
-          // Astryx injects one <style> with popover slide animations. Allow exactly that content by
-          // hash instead of 'unsafe-inline'. If an Astryx upgrade changes it, only the animation is lost;
-          // re-read the hash from the console violation message.
-          styleSrcElem: ["'self'", ASTRYX_LAYER_STYLE_HASH],
-          imgSrc: ["'self'", 'data:'],
-          connectSrc: ["'self'"],
-          objectSrc: ["'none'"],
-          baseUri: ["'self'"],
-          formAction: ["'self'"],
-          frameAncestors: ["'none'"],
-        },
-      },
-    }),
-  );
-  app.use((req, res, next) => {
-    res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(), microphone=()');
-    next();
-  });
+  app.use(securityHeaders());
   app.use(compression());
-  app.get('/health', (req, res) => res.json({ status: 'ok' }));
+  app.get('/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ status: 'ok' });
+  });
   // Vite fingerprints everything under /assets, so it can be cached for a year; the HTML must always revalidate.
-  app.use('/assets', express.static(path.join(publicDir, 'assets'), { immutable: true, maxAge: '1y', fallthrough: false }));
+  app.use(
+    '/assets',
+    express.static(path.join(publicDir, 'assets'), { immutable: true, maxAge: '1y', fallthrough: false }),
+  );
   app.use(express.static(publicDir, { maxAge: 0, etag: true }));
 
-  const api = express.Router();
-  api.use(rateLimit({ windowMs: 60_000, limit: rateLimitPerMinute, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Too many requests. Please wait a minute and try again.' } }));
-  api.use(express.json({ limit: '10kb' }));
-  api.use((req, res, next) => {
-    res.setHeader('Cache-Control', 'no-store');
-    next();
+  const limiters = createRateLimiters({
+    perMinute: rateLimitPerMinute,
+    modelPerMinute: modelRateLimitPerMinute,
+    modelCallsPerHour,
+    now,
   });
-
-  /** Everything the assistant and the UI need to know about one household, gathered once. */
-  async function buildContext({ lat, lng, label, utcOffsetMinutes, profile }) {
-    const air = await airQuality.getSnapshot(lat, lng);
-    const level = severity(air.index);
-    return {
-      location: { label, lat, lng, utcOffsetMinutes },
-      air: {
-        ...air,
-        severity: level,
-        severityLabel: SEVERITY_LABELS[level],
-        forecast: air.forecast.map((hour) => ({ ...hour, severity: severity(hour.index) })),
-      },
-      impact: {
-        commute: commuteImpact(profile),
-        outdoor: outdoorWindows(air.forecast, utcOffsetMinutes),
-      },
-      profile,
-    };
-  }
-
-  api.get('/location', async (req, res) => {
-    const query = parse(locationQuerySchema, req.query);
-    res.json('q' in query ? await geocoder.search(query.q) : await geocoder.reverse(query.lat, query.lng));
-  });
-
-  api.post('/plan', async (req, res) => {
-    const context = await buildContext(parse(planRequestSchema, req.body));
-    const plan = await assistant.generatePlan(context);
-    res.json({ location: context.location, air: context.air, impact: context.impact, plan });
-  });
-
-  api.post('/chat', async (req, res) => {
-    const { question, history, ...rest } = parse(chatRequestSchema, req.body);
-    const context = await buildContext(rest);
-    res.json({ answer: await assistant.answer(context, question, history) });
-  });
-
-  api.use((req, res) => res.status(404).json({ error: 'Not found' }));
-  app.use('/api', api);
-
-  // Central error handler: client-safe messages only; details go to the log.
-  app.use((error, req, res, _next) => {
-    const passThrough = [400, 404, 413].includes(error.status) ? error.status : undefined;
-    const status = error instanceof HttpError ? error.status : (passThrough ?? 502);
-    if (status >= 500) log({ severity: 'ERROR', message: error.message, path: req.path });
-    const generic = { 404: 'Not found', 502: 'A data service is temporarily unavailable. Please try again shortly.' };
-    const message = error instanceof HttpError ? error.message : (generic[status] ?? 'Invalid request.');
-    res.status(status).json({ error: message });
-  });
+  app.use('/api', createApiRouter({ airQuality, geocoder, assistant, limiters }));
+  app.use(createErrorHandler(log));
 
   return app;
 }

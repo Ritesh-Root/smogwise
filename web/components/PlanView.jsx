@@ -4,9 +4,12 @@ import { Heading } from '@astryxdesign/core/Heading';
 import { List, ListItem } from '@astryxdesign/core/List';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { Badge } from '@astryxdesign/core/Badge';
+import { stringsFor } from '../strings.js';
 
-const impact = (text) => <Text type="supporting">{`Impact: ${text}`}</Text>;
+/** A secondary line under a list item. */
+function Detail({ children }) {
+  return <Text type="supporting">{children}</Text>;
+}
 
 function Section({ title, children }) {
   return (
@@ -17,34 +20,48 @@ function Section({ title, children }) {
   );
 }
 
-/** The model's plan: alerts first, then routine, indoor air hacks and swaps, each with its impact. */
+/**
+ * The model's plan: alerts first, then routine, indoor air hacks and swaps, each with its impact.
+ * The whole card is in the plan's language, so it carries that `lang`.
+ * @param {{plan: import('../types.js').Plan, language: string}} props
+ */
 export function PlanView({ plan, language }) {
+  const t = stringsFor(language);
+  const impact = (text) => <Detail>{`${t.impact}: ${text}`}</Detail>;
   return (
     <Card padding={6}>
       <VStack gap={5} lang={language}>
-        <Heading level={2}>Your plan for today</Heading>
+        <Heading level={2}>{t.planTitle}</Heading>
         <Text>{plan.summary}</Text>
-        {plan.alerts.map((alert) => (
-          <Banner key={alert} status="warning" title={alert} />
+        {plan.alerts.map((alert, index) => (
+          <Banner key={`${index}-${alert}`} role="alert" status="warning" title={alert} />
         ))}
-        <Section title="Daily routine">
-          {plan.routine.map((r) => (
-            <ListItem key={`${r.time}-${r.action}`} label={<Text>{`${r.time}: ${r.action}`}</Text>} description={impact(r.impact)} />
-          ))}
-        </Section>
-        <Section title="Indoor air hacks">
-          {plan.indoor.map((i) => (
+        <Section title={t.routine}>
+          {plan.routine.map((r, index) => (
             <ListItem
-              key={i.tip}
-              label={<Text>{i.tip}</Text>}
-              description={impact(i.impact)}
-              endContent={<Badge variant="neutral" label={i.cost} />}
+              key={`${index}-${r.time}`}
+              label={<Text>{`${r.time}: ${r.action}`}</Text>}
+              description={impact(r.impact)}
             />
           ))}
         </Section>
-        <Section title="Sustainable swaps">
-          {plan.alternatives.map((a) => (
-            <ListItem key={a.swap} label={<Text>{a.swap}</Text>} description={impact(a.impact)} />
+        <Section title={t.indoor}>
+          {plan.indoor.map((i, index) => (
+            <ListItem
+              key={`${index}-${i.tip}`}
+              label={<Text>{i.tip}</Text>}
+              description={
+                <VStack gap={1}>
+                  {impact(i.impact)}
+                  <Detail>{`${t.cost}: ${i.cost}`}</Detail>
+                </VStack>
+              }
+            />
+          ))}
+        </Section>
+        <Section title={t.swaps}>
+          {plan.alternatives.map((a, index) => (
+            <ListItem key={`${index}-${a.swap}`} label={<Text>{a.swap}</Text>} description={impact(a.impact)} />
           ))}
         </Section>
       </VStack>

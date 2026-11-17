@@ -3,7 +3,9 @@ FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
+# The client imports shared constants and option lists from src/, so the build stage needs it too.
 COPY vite.config.js ./
+COPY src ./src
 COPY web ./web
 RUN npm run build
 

@@ -1,6 +1,8 @@
-import { HttpError } from '../errors.js';
-import { PLAN_REQUEST, PLAN_RESPONSE_SCHEMA, systemInstruction } from '../prompt.js';
-import { planSchema } from '../validation.js';
+// @ts-check
+import { CHAT_MAX_OUTPUT_TOKENS, MODEL_TIMEOUT_MS, PLAN_MAX_OUTPUT_TOKENS, TEMPERATURE } from '../constants.js';
+import { HttpError, UpstreamError } from '../errors.js';
+import { PLAN_PROMPT, systemInstruction } from '../prompt.js';
+import { PLAN_RESPONSE_SCHEMA, planSchema } from '../plan.js';
 
 const SAFETY_SETTINGS = [
   'HARM_CATEGORY_HARASSMENT',
@@ -11,32 +13,43 @@ const SAFETY_SETTINGS = [
 
 /**
  * Gemini (Vertex AI) wrapper for the two things the app asks the model to do.
- * @param {{ai: {models: {generateContent: Function}}, model: string}} options
+ * @param {{ai: import('../types.js').GenerativeClient, model: string, now?: () => Date}} options
+ * @returns {import('../types.js').Assistant}
  */
-export function createAssistant({ ai, model }) {
+export function createAssistant({ ai, model, now = () => new Date() }) {
+  /**
+   * @param {import('../types.js').PlanContext} context
+   * @param {Array<{role: string, parts: Array<{text: string}>}>} contents
+   * @param {Record<string, unknown>} extraConfig
+   */
   async function generate(context, contents, extraConfig) {
-    const response = await ai.models.generateContent({
-      model,
-      contents,
-      config: {
-        systemInstruction: systemInstruction(context),
-        temperature: 0.4,
-        safetySettings: SAFETY_SETTINGS,
-        thinkingConfig: { thinkingLevel: 'LOW' },
-        ...extraConfig,
-      },
-    });
+    let response;
+    try {
+      response = await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction: systemInstruction(context, now()),
+          temperature: TEMPERATURE,
+          safetySettings: SAFETY_SETTINGS,
+          thinkingConfig: { thinkingLevel: 'LOW' },
+          abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+          ...extraConfig,
+        },
+      });
+    } catch (cause) {
+      throw new UpstreamError('Gemini request failed', { cause });
+    }
     if (!response.text) throw new HttpError(502, 'The assistant could not answer that. Please rephrase and try again.');
     return response.text;
   }
 
   return {
-    /** @param {object} context @returns {Promise<import('zod').infer<typeof planSchema>>} */
     async generatePlan(context) {
-      const raw = await generate(context, [{ role: 'user', parts: [{ text: PLAN_REQUEST }] }], {
+      const raw = await generate(context, [{ role: 'user', parts: [{ text: PLAN_PROMPT }] }], {
         responseMimeType: 'application/json',
         responseSchema: PLAN_RESPONSE_SCHEMA,
-        maxOutputTokens: 4096,
+        maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS,
       });
       let parsed;
       try {
@@ -44,22 +57,18 @@ export function createAssistant({ ai, model }) {
       } catch {
         parsed = { success: false };
       }
-      if (!parsed.success) throw new HttpError(502, 'The assistant returned an incomplete plan. Please try again.');
+      if (!parsed.success || !parsed.data) {
+        throw new HttpError(502, 'The assistant returned an incomplete plan. Please try again.');
+      }
       return parsed.data;
     },
 
-    /**
-     * @param {object} context
-     * @param {string} question
-     * @param {Array<{role: 'user' | 'model', text: string}>} history
-     * @returns {Promise<string>}
-     */
     answer(context, question, history) {
       const contents = [...history, { role: 'user', text: question }].map((turn) => ({
         role: turn.role,
         parts: [{ text: turn.text }],
       }));
-      return generate(context, contents, { maxOutputTokens: 2048 });
+      return generate(context, contents, { maxOutputTokens: CHAT_MAX_OUTPUT_TOKENS });
     },
   };
 }

@@ -1,36 +1,52 @@
 import { Banner } from '@astryxdesign/core/Banner';
 import { Button } from '@astryxdesign/core/Button';
-import { ChatComposer, ChatMessage, ChatMessageBubble, ChatMessageList } from '@astryxdesign/core/Chat';
 import { Card } from '@astryxdesign/core/Card';
+import { ChatComposer, ChatMessage, ChatMessageBubble, ChatMessageList } from '@astryxdesign/core/Chat';
 import { Heading } from '@astryxdesign/core/Heading';
 import { HStack } from '@astryxdesign/core/HStack';
 import { Markdown } from '@astryxdesign/core/Markdown';
 import { Spinner } from '@astryxdesign/core/Spinner';
 import { Text } from '@astryxdesign/core/Text';
 import { VStack } from '@astryxdesign/core/VStack';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { askQuestion } from '../api.js';
-import { SUGGESTED_QUESTIONS } from '../constants.js';
+import { DISCLAIMER, LIMITS, SUGGESTED_QUESTIONS } from '../constants.js';
 
-/** Follow-up questions answered from the same live air data and household profile as the plan. */
+const SENDERS = {
+  user: { sender: 'user', name: 'You' },
+  model: { sender: 'assistant', name: 'SmogWise' },
+};
+
+/**
+ * Follow-up questions answered from the same live air data and household profile as the plan.
+ * A question that fails is taken back out of the conversation and put back in the box so it can be retried.
+ * @param {{planRequest: import('../types.js').PlanRequest}} props
+ */
 export function Chat({ planRequest }) {
+  const language = planRequest.profile.language;
+  /** @type {[Array<{id: number, role: 'user' | 'model', text: string}>, Function]} */
   const [turns, setTurns] = useState([]);
   const [draft, setDraft] = useState('');
   const [isAsking, setIsAsking] = useState(false);
   const [error, setError] = useState('');
+  const nextId = useRef(0);
 
+  /** @param {string} text */
   async function ask(text) {
     const question = text.trim();
-    if (question.length < 2 || isAsking) return;
+    if (question.length < LIMITS.questionMin || isAsking) return;
     setError('');
     setDraft('');
     setIsAsking(true);
-    const history = turns.map((t) => ({ role: t.role, text: t.text }));
-    setTurns((previous) => [...previous, { role: 'user', text: question }]);
+    const history = turns.map(({ role, text: turnText }) => ({ role, text: turnText }));
+    const asked = { id: nextId.current++, role: 'user', text: question };
+    setTurns((previous) => [...previous, asked]);
     try {
       const { answer } = await askQuestion(planRequest, question, history);
-      setTurns((previous) => [...previous, { role: 'model', text: answer.slice(0, 2000) }]);
+      setTurns((previous) => [...previous, { id: nextId.current++, role: 'model', text: answer }]);
     } catch (failure) {
+      setTurns((previous) => previous.filter((turn) => turn.id !== asked.id));
+      setDraft(question);
       setError(failure.message);
     } finally {
       setIsAsking(false);
@@ -41,30 +57,34 @@ export function Chat({ planRequest }) {
     <Card padding={6}>
       <VStack gap={4}>
         <Heading level={2}>Ask a follow-up</Heading>
-        {turns.length === 0 && (
-          <HStack gap={2} wrap="wrap">
-            {SUGGESTED_QUESTIONS.map((question) => (
-              <Button key={question} label={question} variant="secondary" size="sm" onClick={() => ask(question)} />
-            ))}
-          </HStack>
-        )}
+        <HStack gap={2} wrap="wrap">
+          {SUGGESTED_QUESTIONS.map((question) => (
+            <Button key={question} label={question} variant="secondary" size="sm" onClick={() => ask(question)} />
+          ))}
+        </HStack>
         <ChatMessageList isStreaming={isAsking} aria-label="Conversation with SmogWise">
-          {turns.map((turn, index) => (
-            <ChatMessage key={index} sender={turn.role === 'user' ? 'user' : 'assistant'} name={turn.role === 'user' ? 'You' : 'SmogWise'}>
+          {turns.map((turn) => (
+            <ChatMessage key={turn.id} {...SENDERS[turn.role]}>
               <ChatMessageBubble>
-                {turn.role === 'user' ? <Text>{turn.text}</Text> : <Markdown headingLevelStart={4}>{turn.text}</Markdown>}
+                {turn.role === 'user' ? (
+                  <Text>{turn.text}</Text>
+                ) : (
+                  <VStack lang={language}>
+                    <Markdown headingLevelStart={3}>{turn.text}</Markdown>
+                  </VStack>
+                )}
               </ChatMessageBubble>
             </ChatMessage>
           ))}
           {isAsking && (
-            <ChatMessage sender="assistant" name="SmogWise">
+            <ChatMessage {...SENDERS.model}>
               <ChatMessageBubble>
                 <Spinner size="sm" label="Checking the air data..." />
               </ChatMessageBubble>
             </ChatMessage>
           )}
         </ChatMessageList>
-        {error && <Banner status="error" title={error} />}
+        {error && <Banner role="alert" status="error" title={error} />}
         <ChatComposer
           value={draft}
           onChange={setDraft}
@@ -72,7 +92,7 @@ export function Chat({ planRequest }) {
           isDisabled={isAsking}
           placeholder="e.g. Is it safe for my son to play cricket at 5 pm?"
         />
-        <Text type="supporting">Guidance is generated by Gemini from live air data and is not medical advice.</Text>
+        <Text type="supporting">{DISCLAIMER}</Text>
       </VStack>
     </Card>
   );

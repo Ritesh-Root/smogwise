@@ -8,14 +8,35 @@ configure({ asyncUtilTimeout: 5000 });
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  // Tests replace these browser objects; put the environment back so test order never matters.
+  Reflect.deleteProperty(navigator, 'geolocation');
+  Reflect.deleteProperty(navigator, 'clipboard');
 });
 
 // jsdom lacks these browser APIs that the component library feature-detects.
-globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
-globalThis.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } };
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+globalThis.IntersectionObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  takeRecords() {
+    return [];
+  }
+};
 window.matchMedia ??= (query) => ({
-  matches: false, media: query, onchange: null,
-  addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false,
+  matches: false,
+  media: query,
+  onchange: null,
+  addEventListener() {},
+  removeEventListener() {},
+  addListener() {},
+  removeListener() {},
+  dispatchEvent: () => false,
 });
 Element.prototype.scrollIntoView ??= () => {};
 Element.prototype.scrollTo ??= () => {};
