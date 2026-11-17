@@ -32,7 +32,7 @@ export const SUGGESTED_QUESTIONS = [
 export const SEVERITY_BADGES = ['green', 'teal', 'yellow', 'orange', 'red', 'purple'];
 
 /** How long a plan or chat request may take before the browser gives up, in milliseconds. */
-export const REQUEST_TIMEOUT_MS = 45_000;
+export const REQUEST_TIMEOUT_MS = 60_000;
 
 /** Browser geolocation: wait up to 10 s, and accept a position up to 10 minutes old. */
 export const GEOLOCATION_OPTIONS = { timeout: 10_000, maximumAge: 10 * 60 * 1000 };

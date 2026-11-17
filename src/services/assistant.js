@@ -1,5 +1,11 @@
 // @ts-check
-import { CHAT_MAX_OUTPUT_TOKENS, MODEL_TIMEOUT_MS, PLAN_MAX_OUTPUT_TOKENS, TEMPERATURE } from '../constants.js';
+import {
+  CHAT_MAX_OUTPUT_TOKENS,
+  MODEL_ATTEMPTS,
+  MODEL_TIMEOUT_MS,
+  PLAN_MAX_OUTPUT_TOKENS,
+  TEMPERATURE,
+} from '../constants.js';
 import { HttpError, UpstreamError } from '../errors.js';
 import { PLAN_PROMPT, systemInstruction } from '../prompt.js';
 import { PLAN_RESPONSE_SCHEMA, planSchema } from '../plan.js';
@@ -10,6 +16,27 @@ const SAFETY_SETTINGS = [
   'HARM_CATEGORY_SEXUALLY_EXPLICIT',
   'HARM_CATEGORY_DANGEROUS_CONTENT',
 ].map((category) => ({ category, threshold: 'BLOCK_MEDIUM_AND_ABOVE' }));
+
+/** @param {unknown} error */
+const isTimeout = (error) => error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+
+/**
+ * Run a model request, trying again only when an attempt timed out: a slow call usually succeeds on a fresh
+ * attempt, while any other failure (quota, bad request) would just fail again and cost more.
+ * @template T
+ * @param {() => Promise<T>} request
+ * @param {number} attempts
+ * @returns {Promise<T>}
+ */
+async function withRetryOnTimeout(request, attempts) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await request();
+    } catch (cause) {
+      if (attempt >= attempts || !isTimeout(cause)) throw new UpstreamError('Gemini request failed', { cause });
+    }
+  }
+}
 
 /**
  * Gemini (Vertex AI) wrapper for the two things the app asks the model to do.
@@ -23,9 +50,8 @@ export function createAssistant({ ai, model, now = () => new Date() }) {
    * @param {Record<string, unknown>} extraConfig
    */
   async function generate(context, contents, extraConfig) {
-    let response;
-    try {
-      response = await ai.models.generateContent({
+    const request = () =>
+      ai.models.generateContent({
         model,
         contents,
         config: {
@@ -37,9 +63,7 @@ export function createAssistant({ ai, model, now = () => new Date() }) {
           ...extraConfig,
         },
       });
-    } catch (cause) {
-      throw new UpstreamError('Gemini request failed', { cause });
-    }
+    const response = await withRetryOnTimeout(request, MODEL_ATTEMPTS);
     if (!response.text) throw new HttpError(502, 'The assistant could not answer that. Please rephrase and try again.');
     return response.text;
   }

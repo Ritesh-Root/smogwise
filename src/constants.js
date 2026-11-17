@@ -24,7 +24,9 @@ export const JSON_BODY_LIMIT = '32kb';
 export const PLAN_LIMITS = Object.freeze({ items: 8, alerts: 4, text: 600, timeLabel: 60, cost: 80 });
 
 export const UPSTREAM_TIMEOUT_MS = 8_000;
-export const MODEL_TIMEOUT_MS = 30_000;
+/** One Gemini attempt may take this long; a timed-out attempt is retried once (so at most about 50 s in total). */
+export const MODEL_TIMEOUT_MS = 25_000;
+export const MODEL_ATTEMPTS = 2;
 
 export const TEMPERATURE = 0.4;
 export const PLAN_MAX_OUTPUT_TOKENS = 4096;
