@@ -1,0 +1,10 @@
+node_modules/
+coverage/
+.env
+.DS_Store
+dist/
+web-old/
+.env.*
+!.env.example
+test-results/
+playwright-report/

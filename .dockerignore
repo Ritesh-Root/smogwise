@@ -1,0 +1,10 @@
+node_modules
+dist
+test
+coverage
+web-old
+.git
+.github
+.env
+*.md
+eslint.config.js
