@@ -1,0 +1,78 @@
+{
+  "name": "smogwise",
+  "version": "1.0.0",
+  "description": "GenAI assistant that helps families and communities navigate winter smog and urban air pollution.",
+  "keywords": [
+    "air-quality",
+    "gemini",
+    "cloud-run",
+    "accessibility",
+    "smog"
+  ],
+  "homepage": "https://smogwise-295478535981.asia-south1.run.app",
+  "bugs": {
+    "url": "https://github.com/Ritesh-Root/smogwise/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ritesh-Root/smogwise.git"
+  },
+  "author": "Ritesh-Root",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --env-file-if-exists=.env --watch server.js",
+    "dev:web": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "test": "node --test --experimental-test-coverage --test-coverage-include='src/**' --test-coverage-lines=95 --test-coverage-branches=85 --test-coverage-functions=95 'test/**/*.test.js'",
+    "test:web": "vitest run --coverage",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run test:web && npm run build && npm run e2e",
+    "typecheck": "tsc -p jsconfig.json",
+    "e2e": "playwright test",
+    "format": "prettier --write \"**/*.{js,jsx,mjs,json,css,yml}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,mjs,json,css,yml}\""
+  },
+  "dependencies": {
+    "@google/genai": "^3.4.0",
+    "compression": "^1.8.2",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.4",
+    "helmet": "^8.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@astryxdesign/core": "0.7.16",
+    "@astryxdesign/theme-neutral": "0.7.16",
+    "@axe-core/playwright": "^4.14.0",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
+    "@stylexjs/stylex": "^0.19.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.12",
+    "@types/compression": "^1.8.1",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.6",
+    "@types/supertest": "^7.2.1",
+    "@vitejs/plugin-react": "^6.3.0",
+    "@vitest/coverage-v8": "^5.1.0",
+    "axe-core": "^4.14.1",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "jsdom": "^31.0.1",
+    "prettier": "^3.10.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "supertest": "^7.3.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0"
+  }
+}
