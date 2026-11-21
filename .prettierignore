@@ -1,9 +1,0 @@
-node_modules
-dist
-coverage
-**/coverage
-playwright-report
-test-results
-package-lock.json
-docs/images
-web-old
